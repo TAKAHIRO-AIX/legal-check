@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>契約書リーガルチェック</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #f0f4f8; color: #333; }
+    .container { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 1.5rem; color: #1f497d; margin-bottom: 24px; text-align: center; }
+    .card { background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 1rem; color: #1f497d; margin-bottom: 12px; border-left: 4px solid #1f497d; padding-left: 8px; }
+    label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
+    textarea { width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 10px; font-size: 0.9rem; resize: vertical; font-family: inherit; }
+    textarea:focus { outline: none; border-color: #1f497d; }
+    .file-area { border: 2px dashed #aac; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: background 0.2s; }
+    .file-area:hover, .file-area.dragover { background: #eef2ff; }
+    .file-area input { display: none; }
+    .file-name { margin-top: 8px; font-size: 0.85rem; color: #1f497d; font-weight: bold; }
+    button[type=submit] {
+      width: 100%; padding: 14px; background: #1f497d; color: #fff;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: background 0.2s;
+    }
+    button[type=submit]:hover { background: #163a63; }
+    button[type=submit]:disabled { background: #aaa; cursor: not-allowed; }
+    #status { text-align: center; margin-top: 16px; font-size: 0.9rem; color: #555; min-height: 24px; }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #ccc; border-top-color: #1f497d; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #download-area { display: none; text-align: center; margin-top: 16px; }
+    #download-area a { display: inline-block; padding: 12px 32px; background: #006000; color: #fff; border-radius: 8px; text-decoration: none; font-size: 0.95rem; }
+    #download-area a:hover { background: #004800; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📄 契約書リーガルチェック</h1>
+
+  <form id="form">
+    <!-- STEP 1: PDF -->
+    <div class="card">
+      <h2>STEP 1｜契約書PDFをアップロード</h2>
+      <div class="file-area" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
+        <div>📎 クリックまたはドラッグ＆ドロップ</div>
+        <div style="font-size:0.8rem;color:#888;margin-top:4px">スキャンPDF対応（OCR自動処理）</div>
+        <input type="file" id="pdf-input" name="pdf" accept=".pdf" required>
+        <div class="file-name" id="file-name">ファイル未選択</div>
+      </div>
+    </div>
+
+    <!-- STEP 2: コンテキスト -->
+    <div class="card">
+      <h2>STEP 2｜コンテキストを入力</h2>
+      <label>契約書の背景・経緯・概要</label>
+      <textarea name="background" rows="4" placeholder="例：A社とのシステム開発委託契約。先方から提示された雛形。納期は3ヶ月、金額は500万円。" required></textarea>
+      <div style="height:12px"></div>
+      <label>あなたの注目点・着眼点・希望</label>
+      <textarea name="focus" rows="4" placeholder="例：損害賠償の上限条項、知的財産権の帰属、途中解約時の精算方法を特に確認したい。" required></textarea>
+    </div>
+
+    <!-- STEP 3: 実行 -->
+    <div class="card">
+      <h2>STEP 3｜チェック実行</h2>
+      <button type="submit" id="submit-btn">🔍 リーガルチェックを開始する</button>
+      <div id="status"></div>
+      <div id="download-area">
+        <a id="download-link" href="#" download="legal_check_report.docx">📥 レポートをダウンロード（Word）</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+  // ドラッグ＆ドロップ
+  const dropZone = document.getElementById('drop-zone');
+  const pdfInput = document.getElementById('pdf-input');
+  const fileName = document.getElementById('file-name');
+
+  pdfInput.addEventListener('change', () => {
+    fileName.textContent = pdfInput.files[0]?.name || 'ファイル未選択';
+  });
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file?.type === 'application/pdf') {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      pdfInput.files = dt.files;
+      fileName.textContent = file.name;
+    }
+  });
+
+  // フォーム送信
+  document.getElementById('form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const status = document.getElementById('status');
+    const dlArea = document.getElementById('download-area');
+
+    btn.disabled = true;
+    dlArea.style.display = 'none';
+    status.innerHTML = '<span class="spinner"></span>OCR処理中... しばらくお待ちください（30〜60秒）';
+
+    try {
+      const formData = new FormData(e.target);
+      const res = await fetch('/check', { method: 'POST', body: formData });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'エラーが発生しました');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      document.getElementById('download-link').href = url;
+      dlArea.style.display = 'block';
+      status.innerHTML = '✅ チェック完了！下のボタンからレポートをダウンロードしてください。';
+    } catch (err) {
+      status.innerHTML = `❌ エラー: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
