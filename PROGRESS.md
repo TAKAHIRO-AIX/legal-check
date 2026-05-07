@@ -54,6 +54,14 @@ export AWS_REGION=us-east-1
 export TEXTRACT_S3_BUCKET=（S3バケット名）
 ```
 
+## ⭐ 明日キロちゃんへの声がけ（これをコピペ）
+
+```
+GitHubのこのファイルを読んで続きをお願い：https://github.com/TAKAHIRO-AIX/legal-check/blob/main/PROGRESS.md
+```
+
+---
+
 ## 注意事項
 - GitHubのPersonal Access Tokenは使用済み。必要なら https://github.com/settings/tokens で再発行
 - Claude Opus 4（旧）は2026年5月31日でサポート終了のため、Claude Opus 4.7を採用
