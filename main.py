@@ -18,7 +18,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+BEDROCK_MODEL_ID = "qwen.qwen3-32b-v1:0"
 
 textract = boto3.client("textract", region_name=AWS_REGION)
 bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
@@ -77,7 +77,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 def legal_check_with_bedrock(contract_text: str, background: str, focus: str) -> list[dict]:
-    """BedrockのClaude Opus 4.7でリーガルチェック"""
+    """BedrockでリーガルチェックClaude/Qwen両対応"""
     prompt = f"""あなたは日本法に精通した法律の専門家です。以下の契約書をリーガルチェックしてください。
 
 ## 契約書の背景・経緯・概要
@@ -107,16 +107,23 @@ def legal_check_with_bedrock(contract_text: str, background: str, focus: str) ->
   }}
 ]"""
 
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 4096,
-        "messages": [{"role": "user", "content": prompt}],
-    })
+    is_claude = BEDROCK_MODEL_ID.startswith("us.anthropic") or BEDROCK_MODEL_ID.startswith("anthropic")
+    if is_claude:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+    else:
+        body = json.dumps({
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096,
+        })
 
     response = bedrock.invoke_model(modelId=BEDROCK_MODEL_ID, body=body)
-    result_text = json.loads(response["body"].read())["content"][0]["text"]
+    result = json.loads(response["body"].read())
+    result_text = result["content"][0]["text"] if is_claude else result["choices"][0]["message"]["content"]
 
-    # JSON部分を抽出
     start = result_text.find("[")
     end = result_text.rfind("]") + 1
     return json.loads(result_text[start:end])
