@@ -1,0 +1,16 @@
+# 環境・認証情報
+.env
+.env.*
+*.pem
+*.key
+credentials
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 一時ファイル
+/tmp/
+*.log
