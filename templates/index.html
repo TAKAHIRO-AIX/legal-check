@@ -37,13 +37,13 @@
   <h1>📄 契約書リーガルチェック</h1>
 
   <form id="form">
-    <!-- STEP 1: PDF -->
+    <!-- STEP 1: ファイルアップロード -->
     <div class="card">
-      <h2>STEP 1｜契約書PDFをアップロード</h2>
+      <h2>STEP 1｜契約書ファイルをアップロード</h2>
       <div class="file-area" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
         <div>📎 クリックまたはドラッグ＆ドロップ</div>
-        <div style="font-size:0.8rem;color:#888;margin-top:4px">スキャンPDF対応（OCR自動処理）</div>
-        <input type="file" id="pdf-input" name="pdf" accept=".pdf" required>
+        <div style="font-size:0.8rem;color:#888;margin-top:4px">PDF・Word(.docx)・Excel(.xlsx)・テキスト(.txt)対応</div>
+        <input type="file" id="pdf-input" name="pdf" accept=".pdf,.docx,.xlsx,.txt" required>
         <div class="file-name" id="file-name">ファイル未選択</div>
       </div>
     </div>
@@ -85,7 +85,7 @@
     e.preventDefault();
     dropZone.classList.remove('dragover');
     const file = e.dataTransfer.files[0];
-    if (file?.type === 'application/pdf') {
+    if (file) {
       const dt = new DataTransfer();
       dt.items.add(file);
       pdfInput.files = dt.files;
@@ -102,7 +102,8 @@
 
     btn.disabled = true;
     dlArea.style.display = 'none';
-    status.innerHTML = '<span class="spinner"></span>OCR処理中... しばらくお待ちください（30〜60秒）';
+    const isPdf = document.getElementById('pdf-input').files[0]?.name.toLowerCase().endsWith('.pdf');
+      status.innerHTML = `<span class="spinner"></span>${isPdf ? 'OCR処理中... しばらくお待ちください（30〜60秒）' : 'ファイル読み込み・AI解析中... しばらくお待ちください'}`;
 
     try {
       const formData = new FormData(e.target);

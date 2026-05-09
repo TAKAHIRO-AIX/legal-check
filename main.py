@@ -5,6 +5,7 @@ import tempfile
 import time
 
 import boto3
+import openpyxl
 from docx import Document
 from docx.shared import Pt, RGBColor
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -24,7 +25,33 @@ textract = boto3.client("textract", region_name=AWS_REGION)
 bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    """WordファイルからテキストをExtract"""
+    doc = Document(io.BytesIO(file_bytes))
+    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def extract_text_from_xlsx(file_bytes: bytes) -> str:
+    """ExcelファイルをシートごとにチャンクとしてExtract"""
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    chunks = []
+    for sheet in wb.worksheets:
+        rows = []
+        for row in sheet.iter_rows(values_only=True):
+            row_text = "\t".join(str(c) if c is not None else "" for c in row)
+            if row_text.strip():
+                rows.append(row_text)
+        if rows:
+            chunks.append(f"--- シート: {sheet.title} ---\n" + "\n".join(rows))
+    return "\n\n".join(chunks)
+
+
+def extract_text_from_txt(file_bytes: bytes) -> str:
+    """テキストファイルをExtract"""
+    return file_bytes.decode("utf-8", errors="replace")
+
+
+
     """TextractでスキャンPDFからテキスト抽出（非同期ジョブ）"""
     s3 = boto3.client("s3", region_name=AWS_REGION)
     bucket = os.getenv("TEXTRACT_S3_BUCKET")
@@ -181,14 +208,22 @@ async def check_contract(
     background: str = Form(...),
     focus: str = Form(...),
 ):
-    if not pdf.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="PDFファイルのみ対応しています")
+    filename = pdf.filename.lower()
+    if not any(filename.endswith(ext) for ext in (".pdf", ".docx", ".xlsx", ".txt")):
+        raise HTTPException(status_code=400, detail="PDF・Word・Excel・テキストファイルのみ対応しています")
 
-    pdf_bytes = await pdf.read()
+    file_bytes = await pdf.read()
 
     try:
-        # 1. OCR
-        contract_text = extract_text_from_pdf(pdf_bytes)
+        # 1. テキスト抽出
+        if filename.endswith(".pdf"):
+            contract_text = extract_text_from_pdf(file_bytes)
+        elif filename.endswith(".docx"):
+            contract_text = extract_text_from_docx(file_bytes)
+        elif filename.endswith(".xlsx"):
+            contract_text = extract_text_from_xlsx(file_bytes)
+        else:
+            contract_text = extract_text_from_txt(file_bytes)
 
         # 2. リーガルチェック
         issues = legal_check_with_bedrock(contract_text, background, focus)
