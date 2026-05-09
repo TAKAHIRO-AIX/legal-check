@@ -186,11 +186,21 @@ async def check_contract(
 
     pdf_bytes = await pdf.read()
 
-    # 1. OCR
-    contract_text = extract_text_from_pdf(pdf_bytes)
+    try:
+        # 1. OCR
+        contract_text = extract_text_from_pdf(pdf_bytes)
 
-    # 2. リーガルチェック
-    issues = legal_check_with_bedrock(contract_text, background, focus)
+        # 2. リーガルチェック
+        issues = legal_check_with_bedrock(contract_text, background, focus)
+    except HTTPException:
+        raise
+    except Exception as e:
+        err = str(e)
+        if "ThrottlingException" in err or "Too many tokens" in err:
+            raise HTTPException(status_code=429, detail="AIサービスが混雑しています。しばらく待ってから再試行してください。")
+        if "AccessDeniedException" in err:
+            raise HTTPException(status_code=403, detail="AIモデルへのアクセス権限がありません。AWS管理者に確認してください。")
+        raise HTTPException(status_code=500, detail=f"処理中にエラーが発生しました: {err}")
 
     # 3. Wordレポート生成
     word_path = generate_word_report(issues, background, focus)
