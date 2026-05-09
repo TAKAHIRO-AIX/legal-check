@@ -18,7 +18,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
+BEDROCK_MODEL_ID = "us.anthropic.claude-opus-4-20250514-v1:0"
 
 textract = boto3.client("textract", region_name=AWS_REGION)
 bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
