@@ -1,8 +1,10 @@
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import time
+from datetime import datetime
 
 import anthropic
 import boto3
@@ -12,7 +14,7 @@ from bs4 import BeautifulSoup
 from docx import Document
 from docx.shared import Pt, RGBColor
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -26,6 +28,32 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 textract = boto3.client("textract", region_name=AWS_REGION)
 claude_client = anthropic.Anthropic()
+
+# --- DB初期化 ---
+DB_PATH = os.path.join(os.path.dirname(__file__), "history.db")
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS checks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            created_at TEXT,
+            background TEXT,
+            focus TEXT,
+            usage_method TEXT,
+            output_indicator TEXT,
+            other_context TEXT,
+            primary_docs TEXT,
+            secondary_docs TEXT,
+            result TEXT,
+            word_path TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
@@ -309,6 +337,44 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/history", response_class=HTMLResponse)
+async def history_page(request: Request):
+    return templates.TemplateResponse("history.html", {"request": request})
+
+
+@app.get("/api/history")
+async def get_history():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT id, title, created_at, background, focus FROM checks ORDER BY id DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/history/{check_id}")
+async def get_history_detail(check_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM checks WHERE id = ?", (check_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="履歴が見つかりません")
+    data = dict(row)
+    data["primary_docs"] = json.loads(data["primary_docs"]) if data["primary_docs"] else []
+    data["secondary_docs"] = json.loads(data["secondary_docs"]) if data["secondary_docs"] else []
+    data["result"] = json.loads(data["result"]) if data["result"] else []
+    return data
+
+
+@app.delete("/api/history/{check_id}")
+async def delete_history(check_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM checks WHERE id = ?", (check_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
 @app.post("/check")
 async def check_contract(request: Request):
     form = await request.form()
@@ -402,6 +468,22 @@ async def check_contract(request: Request):
 
     # Wordレポート生成
     word_path = generate_word_report(issues, background, focus)
+
+    # 履歴をDBに保存
+    try:
+        title = primary_docs[0]["desc"] if primary_docs else "無題"
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT INTO checks (title, created_at, background, focus, usage_method, output_indicator, other_context, primary_docs, secondary_docs, result, word_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, datetime.now().isoformat(), background, focus, usage_method, output_indicator, other_context,
+             json.dumps([{"desc": d["desc"], "text": d["text"][:500]} for d in primary_docs], ensure_ascii=False),
+             json.dumps([{"desc": d["desc"], "text": d["text"][:500]} for d in secondary_docs], ensure_ascii=False),
+             json.dumps(issues, ensure_ascii=False), word_path)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # 履歴保存失敗してもチェック結果は返す
 
     return FileResponse(
         word_path,
