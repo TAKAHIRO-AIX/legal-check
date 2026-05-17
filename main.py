@@ -4,8 +4,11 @@ import os
 import tempfile
 import time
 
+import anthropic
 import boto3
+import httpx
 import openpyxl
+from bs4 import BeautifulSoup
 from docx import Document
 from docx.shared import Pt, RGBColor
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -19,10 +22,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = "qwen.qwen3-32b-v1:0"
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 textract = boto3.client("textract", region_name=AWS_REGION)
-bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+claude_client = anthropic.Anthropic()
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
@@ -51,7 +54,24 @@ def extract_text_from_txt(file_bytes: bytes) -> str:
     return file_bytes.decode("utf-8", errors="replace")
 
 
+def fetch_text_from_url(url: str) -> str:
+    """URLからWebページのテキストを取得"""
+    try:
+        resp = httpx.get(url, timeout=30, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # スクリプト・スタイルタグを除去
+        for tag in soup(["script", "style", "nav", "header", "footer"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        # 空行を圧縮
+        lines = [line for line in text.split("\n") if line.strip()]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"[URL取得エラー: {str(e)}]"
 
+
+def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """TextractでスキャンPDFからテキスト抽出（非同期ジョブ）"""
     s3 = boto3.client("s3", region_name=AWS_REGION)
     bucket = os.getenv("TEXTRACT_S3_BUCKET")
@@ -103,30 +123,70 @@ def extract_text_from_txt(file_bytes: bytes) -> str:
         s3.delete_object(Bucket=bucket, Key=key)
 
 
-def legal_check_with_bedrock(contract_text: str, background: str, focus: str) -> list[dict]:
-    """BedrockでリーガルチェックClaude/Qwen両対応"""
-    prompt = f"""あなたは日本法に精通した法律の専門家です。以下の契約書をリーガルチェックしてください。
+def legal_check_with_claude_v2(primary_docs: list[dict], secondary_docs: list[dict], background: str, focus: str, usage_method: str = "", output_indicator: str = "", other_context: str = "") -> list[dict]:
+    """複数インプット対応のリーガルチェック"""
+    
+    # トークン上限対策: 各テキストを最大80,000文字に制限（合計で約800K tokens以内に収める）
+    MAX_CHARS_PER_DOC = 80000
+    for doc in primary_docs:
+        if len(doc["text"]) > MAX_CHARS_PER_DOC:
+            doc["text"] = doc["text"][:MAX_CHARS_PER_DOC] + "\n\n[※ テキストが長すぎるため、ここで切り詰めています]"
+    for doc in secondary_docs:
+        if len(doc["text"]) > MAX_CHARS_PER_DOC:
+            doc["text"] = doc["text"][:MAX_CHARS_PER_DOC] + "\n\n[※ テキストが長すぎるため、ここで切り詰めています]"
+    
+    # チェック対象テキストを構築
+    primary_section = ""
+    has_ocr = any(d.get("is_ocr") for d in primary_docs)
+    for i, doc in enumerate(primary_docs, 1):
+        primary_section += f"\n### チェック対象 {i}: {doc['desc']}\n"
+        if doc.get("is_ocr"):
+            primary_section += "（※ スキャンPDFからOCR読取。文字化け・誤認識の可能性あり）\n"
+        primary_section += doc["text"] + "\n"
+    
+    # 参照資料テキストを構築
+    secondary_section = ""
+    if secondary_docs:
+        secondary_section = "\n## 参照資料（比較・参考用。これ自体はチェック対象ではない）\n"
+        for i, doc in enumerate(secondary_docs, 1):
+            secondary_section += f"\n### 参照資料 {i}: {doc['desc']}\n"
+            secondary_section += doc["text"] + "\n"
+    
+    # OCR注意書き
+    ocr_note = ""
+    if has_ocr:
+        ocr_note = """
+- 一部のチェック対象はスキャンPDFからOCR読取したテキストです。文字化け・誤認識箇所がある可能性があります
+- 判読不能な箇所は推測で補わず、その旨を指摘してください（ただし過度に強調せず、読める部分の法的分析を優先）"""
 
-## 契約書の背景・経緯・概要
-{background}
+    # コンテキスト③④⑤を構築
+    additional_context = ""
+    if usage_method:
+        additional_context += f"\n## 情報の活用方法（利用者からの指示）\n{usage_method}\n"
+    if other_context:
+        additional_context += f"\n## その他の指示・補足\n{other_context}\n"
+    
+    # 出力形式の指示
+    output_instruction = """## 出力形式
+結果は必ず以下のJSON配列形式のみで返してください（説明文不要、コードブロック不要）：
+[
+  {
+    "page": ページ番号(int、不明なら1),
+    "clause": "条項番号または条項名",
+    "risk_level": "高/中/低",
+    "issue": "問題点の説明",
+    "recommendation": "修正・対応の提案"
+  }
+]"""
+    if output_indicator:
+        output_instruction = f"""## 出力条件・出力基準（利用者指定）
+{output_indicator}
 
-## 利用者の注目点・着眼点・希望
-{focus}
-
-## 契約書本文
-{contract_text}
-
-## 指示
-上記の契約書を精査し、以下の観点でリスクや問題点を洗い出してください：
-- 利用者に不利な条項
-- 必須条項の欠落（秘密保持・準拠法・管轄裁判所・損害賠償上限など）
-- 曖昧・不明確な表現
-- 利用者の注目点に関連する事項
-
-結果は必ず以下のJSON配列形式のみで返してください（説明文不要）：
+## 出力形式（システム指定・必須）
+上記の出力条件を踏まえつつ、結果は必ず以下のJSON配列形式のみで返してください（説明文不要、コードブロック不要）：
 [
   {{
-    "page": ページ番号(int),
+    "page": ページ番号(int、不明なら1),
     "clause": "条項番号または条項名",
     "risk_level": "高/中/低",
     "issue": "問題点の説明",
@@ -134,26 +194,73 @@ def legal_check_with_bedrock(contract_text: str, background: str, focus: str) ->
   }}
 ]"""
 
-    is_claude = BEDROCK_MODEL_ID.startswith("us.anthropic") or BEDROCK_MODEL_ID.startswith("anthropic")
-    if is_claude:
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4096,
-            "messages": [{"role": "user", "content": prompt}],
-        })
-    else:
-        body = json.dumps({
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 4096,
-        })
+    prompt = f"""あなたは日本法に精通した法律の専門家です。以下の情報に基づきリーガルチェックを実施してください。
 
-    response = bedrock.invoke_model(modelId=BEDROCK_MODEL_ID, body=body)
-    result = json.loads(response["body"].read())
-    result_text = result["content"][0]["text"] if is_claude else result["choices"][0]["message"]["content"]
+## 重要な前提
+- あなたの分析対象は「チェック対象」セクションの契約書です
+- 「参照資料」は比較・参考のために提供されています。参照資料自体のチェックは不要です
+- 「コンテキスト」は利用者の意図・希望を示す参考情報です
+- 契約書の言語が日本語以外（韓国語・英語等）を含む場合、それぞれの言語部分を区別して分析してください{ocr_note}
 
+## コンテキスト
+
+### ① 背景・経緯・概要
+{background}
+
+### ② 注目点・着眼点・希望
+{focus}
+{additional_context}
+
+## チェック対象の情報（STEP1）
+{primary_section}
+{secondary_section}
+
+## 指示
+上記のチェック対象を精査し、以下の観点でリスクや問題点を洗い出してください：
+1. 利用者に不利な条項
+2. 必須条項の欠落（秘密保持・準拠法・管轄裁判所・損害賠償上限・契約期間・解除条件など）
+3. 曖昧・不明確な表現
+4. 利用者の注目点に関連する事項
+5. 参照資料（標準契約書等）と比較して不足・乖離している点
+
+重要：各指摘は簡潔に（issue・recommendationは各100文字以内）。指摘は最大15件まで（利用者が出力条件で別途指定した場合はそちらに従う）。重要度の高いものから優先してください。
+
+{output_instruction}"""
+
+    response = claude_client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=16384,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    result_text = response.content[0].text
+
+    # JSONを抽出
+    import re
+    # ```json ... ``` ブロックを探す
+    json_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', result_text)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    
+    # 直接 [ ... ] を探す
     start = result_text.find("[")
-    end = result_text.rfind("]") + 1
-    return json.loads(result_text[start:end])
+    end = result_text.rfind("]")
+    if start >= 0 and end > start:
+        json_str = result_text[start:end + 1]
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            last_brace = json_str.rfind("}")
+            if last_brace > 0:
+                json_str = json_str[:last_brace + 1] + "]"
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+    
+    raise ValueError(f"JSONが見つかりません: {result_text[:300]}")
 
 
 def generate_word_report(issues: list[dict], background: str, focus: str) -> str:
@@ -203,41 +310,97 @@ async def index(request: Request):
 
 
 @app.post("/check")
-async def check_contract(
-    pdf: UploadFile = File(...),
-    background: str = Form(...),
-    focus: str = Form(...),
-):
-    filename = pdf.filename.lower()
-    if not any(filename.endswith(ext) for ext in (".pdf", ".docx", ".xlsx", ".txt")):
-        raise HTTPException(status_code=400, detail="PDF・Word・Excel・テキストファイルのみ対応しています")
-
-    file_bytes = await pdf.read()
-
+async def check_contract(request: Request):
+    form = await request.form()
+    
+    background = form.get("background", "")
+    focus = form.get("focus", "")
+    usage_method = form.get("usage_method", "")
+    output_indicator = form.get("output_indicator", "")
+    other_context = form.get("other_context", "")
+    
+    # STEP1: インプット情報（チェック対象）を収集
+    primary_docs = []
+    for i in range(20):  # 最大20入力
+        desc = form.get(f"primary_desc_{i}", "").strip()
+        file = form.get(f"primary_file_{i}")
+        text = form.get(f"primary_text_{i}", "").strip()
+        url = form.get(f"primary_url_{i}", "").strip()
+        
+        if not desc and not text and not url and (not file or not hasattr(file, 'filename') or not file.filename):
+            continue
+        
+        doc_text = ""
+        is_ocr = False
+        
+        if file and hasattr(file, 'filename') and file.filename:
+            filename = file.filename.lower()
+            file_bytes = await file.read()
+            if filename.endswith(".pdf"):
+                doc_text = extract_text_from_pdf(file_bytes)
+                is_ocr = True
+            elif filename.endswith(".docx"):
+                doc_text = extract_text_from_docx(file_bytes)
+            elif filename.endswith(".xlsx"):
+                doc_text = extract_text_from_xlsx(file_bytes)
+            else:
+                doc_text = extract_text_from_txt(file_bytes)
+        elif text:
+            doc_text = text
+        elif url:
+            doc_text = fetch_text_from_url(url)
+        
+        if doc_text:
+            primary_docs.append({"desc": desc or f"対象資料{i+1}", "text": doc_text, "is_ocr": is_ocr})
+    
+    # STEP2: インプット付随情報（参照資料）を収集
+    secondary_docs = []
+    for i in range(20):
+        desc = form.get(f"secondary_desc_{i}", "").strip()
+        file = form.get(f"secondary_file_{i}")
+        text = form.get(f"secondary_text_{i}", "").strip()
+        url = form.get(f"secondary_url_{i}", "").strip()
+        
+        if not desc and not text and not url and (not file or not hasattr(file, 'filename') or not file.filename):
+            continue
+        
+        doc_text = ""
+        
+        if file and hasattr(file, 'filename') and file.filename:
+            filename = file.filename.lower()
+            file_bytes = await file.read()
+            if filename.endswith(".pdf"):
+                doc_text = extract_text_from_pdf(file_bytes)
+            elif filename.endswith(".docx"):
+                doc_text = extract_text_from_docx(file_bytes)
+            elif filename.endswith(".xlsx"):
+                doc_text = extract_text_from_xlsx(file_bytes)
+            else:
+                doc_text = extract_text_from_txt(file_bytes)
+        elif text:
+            doc_text = text
+        elif url:
+            doc_text = fetch_text_from_url(url)
+        
+        if doc_text:
+            secondary_docs.append({"desc": desc or f"参照資料{i+1}", "text": doc_text})
+    
+    if not primary_docs:
+        raise HTTPException(status_code=400, detail="チェック対象の契約書を1つ以上入力してください")
+    
     try:
-        # 1. テキスト抽出
-        if filename.endswith(".pdf"):
-            contract_text = extract_text_from_pdf(file_bytes)
-        elif filename.endswith(".docx"):
-            contract_text = extract_text_from_docx(file_bytes)
-        elif filename.endswith(".xlsx"):
-            contract_text = extract_text_from_xlsx(file_bytes)
-        else:
-            contract_text = extract_text_from_txt(file_bytes)
-
-        # 2. リーガルチェック
-        issues = legal_check_with_bedrock(contract_text, background, focus)
+        issues = legal_check_with_claude_v2(primary_docs, secondary_docs, background, focus, usage_method, output_indicator, other_context)
     except HTTPException:
         raise
     except Exception as e:
         err = str(e)
-        if "ThrottlingException" in err or "Too many tokens" in err:
+        if "ThrottlingException" in err or "Too many tokens" in err or "rate_limit" in err:
             raise HTTPException(status_code=429, detail="AIサービスが混雑しています。しばらく待ってから再試行してください。")
-        if "AccessDeniedException" in err:
-            raise HTTPException(status_code=403, detail="AIモデルへのアクセス権限がありません。AWS管理者に確認してください。")
+        if "AccessDeniedException" in err or "authentication" in err.lower():
+            raise HTTPException(status_code=403, detail="AIモデルへのアクセス権限がありません。APIキーを確認してください。")
         raise HTTPException(status_code=500, detail=f"処理中にエラーが発生しました: {err}")
 
-    # 3. Wordレポート生成
+    # Wordレポート生成
     word_path = generate_word_report(issues, background, focus)
 
     return FileResponse(

@@ -7,17 +7,28 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #f0f4f8; color: #333; }
-    .container { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .container { max-width: 1080px; margin: 40px auto; padding: 0 24px; }
     h1 { font-size: 1.5rem; color: #1f497d; margin-bottom: 24px; text-align: center; }
-    .card { background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .card h2 { font-size: 1rem; color: #1f497d; margin-bottom: 12px; border-left: 4px solid #1f497d; padding-left: 8px; }
-    label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
-    textarea { width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 10px; font-size: 0.9rem; resize: vertical; font-family: inherit; }
-    textarea:focus { outline: none; border-color: #1f497d; }
-    .file-area { border: 2px dashed #aac; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: background 0.2s; }
+    .card { background: #fff; border-radius: 10px; padding: 28px 38px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 1rem; color: #1f497d; margin-bottom: 4px; border-left: 4px solid #1f497d; padding-left: 8px; }
+    .card .step-desc { font-size: 0.8rem; color: #666; margin-bottom: 12px; }
+    label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; margin-top: 8px; }
+    textarea, input[type=text] { width: 100%; border: 1px solid #ccc; border-radius: 6px; padding: 10px; font-size: 0.9rem; resize: vertical; font-family: inherit; }
+    textarea:focus, input[type=text]:focus { outline: none; border-color: #1f497d; }
+    .input-group { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 12px; background: #fafbfc; }
+    .input-group-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .input-group-header .group-label { font-size: 0.85rem; font-weight: bold; color: #1f497d; }
+    .remove-btn { background: #e74c3c; color: #fff; border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; cursor: pointer; }
+    .remove-btn:hover { background: #c0392b; }
+    .file-area { border: 2px dashed #aac; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: background 0.2s; margin-bottom: 8px; }
     .file-area:hover, .file-area.dragover { background: #eef2ff; }
-    .file-area input { display: none; }
-    .file-name { margin-top: 8px; font-size: 0.85rem; color: #1f497d; font-weight: bold; }
+    .file-area input[type=file] { display: none; }
+    .file-name { font-size: 0.8rem; color: #1f497d; font-weight: bold; margin-top: 4px; }
+    .add-btn { display: inline-block; padding: 8px 16px; background: #1f497d; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; margin-top: 4px; }
+    .add-btn:hover { background: #163a63; }
+    .or-divider { text-align: center; font-size: 0.8rem; color: #999; margin: 8px 0; }
+    .context-section { margin-bottom: 16px; }
+    .context-section label { font-weight: bold; color: #1f497d; }
     button[type=submit] {
       width: 100%; padding: 14px; background: #1f497d; color: #fff;
       border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: background 0.2s;
@@ -36,31 +47,99 @@
 <div class="container">
   <h1>📄 契約書リーガルチェック</h1>
 
-  <form id="form">
-    <!-- STEP 1: ファイルアップロード -->
+  <form id="form" enctype="multipart/form-data">
+    <!-- STEP 1: インプット情報 -->
     <div class="card">
-      <h2>STEP 1｜契約書ファイルをアップロード</h2>
-      <div class="file-area" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
-        <div>📎 クリックまたはドラッグ＆ドロップ</div>
-        <div style="font-size:0.8rem;color:#888;margin-top:4px">PDF・Word(.docx)・Excel(.xlsx)・テキスト(.txt)対応</div>
-        <input type="file" id="pdf-input" name="pdf" accept=".pdf,.docx,.xlsx,.txt" required>
-        <div class="file-name" id="file-name">ファイル未選択</div>
+      <h2>STEP 1｜インプット情報（対象情報）</h2>
+      <p class="step-desc">チェック・分析対象の契約書等をアップロードまたはテキスト入力してください（複数可）</p>
+      <div id="primary-inputs">
+        <div class="input-group" data-index="0">
+          <div class="input-group-header">
+            <span class="group-label">対象資料 1</span>
+          </div>
+          <label>説明（この資料は何か）</label>
+          <input type="text" name="primary_desc_0" placeholder="例：専属契約書原本（2021年7月締結）">
+          <label>ファイルアップロード</label>
+          <div class="file-area" onclick="this.querySelector('input[type=file]').click()">
+            <div>📎 クリックまたはドラッグ＆ドロップ</div>
+            <div style="font-size:0.75rem;color:#888;margin-top:2px">PDF・Word・Excel・テキスト等 各種形式対応（PDFはOCR自動適用）</div>
+            <input type="file" name="primary_file_0" accept=".pdf,.docx,.xlsx,.txt,.csv,.pages">
+            <div class="file-name">ファイル未選択</div>
+          </div>
+          <div class="or-divider">― または ―</div>
+          <label>テキスト入力（コピペ可）</label>
+          <textarea name="primary_text_0" rows="4" placeholder="契約書のテキストを直接貼り付けることもできます"></textarea>
+          <div class="or-divider">― または ―</div>
+          <label>URL入力（Webページの内容を取得）</label>
+          <input type="text" name="primary_url_0" placeholder="例：https://example.com/contract-terms">
+        </div>
+      </div>
+      <button type="button" class="add-btn" onclick="addInput('primary')">＋ インプット情報を追加</button>
+    </div>
+
+    <!-- STEP 2: インプット付随情報 -->
+    <div class="card">
+      <h2>STEP 2｜インプット付随情報（参考・比較資料）</h2>
+      <p class="step-desc">比較参照用の資料（標準契約書・関連法令・指針・過去の契約書等）をアップロードまたはテキスト入力してください（複数可・任意）</p>
+      <div id="secondary-inputs">
+        <div class="input-group" data-index="0">
+          <div class="input-group-header">
+            <span class="group-label">参照資料 1</span>
+          </div>
+          <label>説明（この資料は何か）</label>
+          <input type="text" name="secondary_desc_0" placeholder="例：韓国K-POP標準専属契約書（2024年改正版）">
+          <label>ファイルアップロード</label>
+          <div class="file-area" onclick="this.querySelector('input[type=file]').click()">
+            <div>📎 クリックまたはドラッグ＆ドロップ</div>
+            <div style="font-size:0.75rem;color:#888;margin-top:2px">PDF・Word・Excel・テキスト等 各種形式対応（PDFはOCR自動適用）</div>
+            <input type="file" name="secondary_file_0" accept=".pdf,.docx,.xlsx,.txt,.csv,.pages">
+            <div class="file-name">ファイル未選択</div>
+          </div>
+          <div class="or-divider">― または ―</div>
+          <label>テキスト入力（コピペ可）</label>
+          <textarea name="secondary_text_0" rows="4" placeholder="参照資料のテキストを直接貼り付けることもできます"></textarea>
+          <div class="or-divider">― または ―</div>
+          <label>URL入力（Webページの内容を取得）</label>
+          <input type="text" name="secondary_url_0" placeholder="例：https://example.com/standard-contract">
+        </div>
+      </div>
+      <button type="button" class="add-btn" onclick="addInput('secondary')">＋ 付随情報を追加</button>
+    </div>
+
+    <!-- STEP 3: コンテキスト -->
+    <div class="card">
+      <h2>STEP 3｜コンテキスト（利用者の思い）</h2>
+      <p class="step-desc">背景情報、注目点、活用方法、出力条件等を入力してください</p>
+      
+      <div class="context-section">
+        <label>① 背景・経緯・概要</label>
+        <textarea name="background" rows="3" placeholder="例：これは娘の専属契約書。2022年3月18日にデビューしたグローバルアーティストグループXG。" required></textarea>
+      </div>
+
+      <div class="context-section">
+        <label>② 注目点・着眼点・希望</label>
+        <textarea name="focus" rows="3" placeholder="例：韓国K-POPの標準契約書をベースに、不利な条項がないか確認したい。" required></textarea>
+      </div>
+
+      <div class="context-section">
+        <label>③ STEP1・STEP2情報の活用方法</label>
+        <textarea name="usage_method" rows="3" placeholder="例：STEP1の専属契約書を、STEP2の韓国標準契約書と比較し、標準から外れている箇所・不利な箇所を特定してほしい。"></textarea>
+      </div>
+
+      <div class="context-section">
+        <label>④ 出力条件 / 出力基準 / 出力形式 / 出力デザイン（Output Indicator）</label>
+        <textarea name="output_indicator" rows="3" placeholder="例：指摘は全量出してほしい（件数制限なし）。リスクレベル高・中・低で分類。条項ごとに問題点と修正提案をセットで。日本語で出力。※未入力の場合は重要度上位15件を出力"></textarea>
+      </div>
+
+      <div class="context-section">
+        <label>⑤ その他</label>
+        <textarea name="other_context" rows="2" placeholder="例：韓国語の条文は日本語に翻訳して分析してほしい。"></textarea>
       </div>
     </div>
 
-    <!-- STEP 2: コンテキスト -->
+    <!-- STEP 4: 実行 -->
     <div class="card">
-      <h2>STEP 2｜コンテキストを入力</h2>
-      <label>契約書の背景・経緯・概要</label>
-      <textarea name="background" rows="4" placeholder="例：A社とのシステム開発委託契約。先方から提示された雛形。納期は3ヶ月、金額は500万円。" required></textarea>
-      <div style="height:12px"></div>
-      <label>あなたの注目点・着眼点・希望</label>
-      <textarea name="focus" rows="4" placeholder="例：損害賠償の上限条項、知的財産権の帰属、途中解約時の精算方法を特に確認したい。" required></textarea>
-    </div>
-
-    <!-- STEP 3: 実行 -->
-    <div class="card">
-      <h2>STEP 3｜チェック実行</h2>
+      <h2>STEP 4｜AIチェック実行</h2>
       <button type="submit" id="submit-btn">🔍 リーガルチェックを開始する</button>
       <div id="status"></div>
       <div id="download-area">
@@ -71,25 +150,72 @@
 </div>
 
 <script>
-  // ドラッグ＆ドロップ
-  const dropZone = document.getElementById('drop-zone');
-  const pdfInput = document.getElementById('pdf-input');
-  const fileName = document.getElementById('file-name');
+  let primaryCount = 1;
+  let secondaryCount = 1;
 
-  pdfInput.addEventListener('change', () => {
-    fileName.textContent = pdfInput.files[0]?.name || 'ファイル未選択';
+  function addInput(type) {
+    const container = document.getElementById(type === 'primary' ? 'primary-inputs' : 'secondary-inputs');
+    const index = type === 'primary' ? primaryCount++ : secondaryCount++;
+    const label = type === 'primary' ? `対象資料 ${index + 1}` : `参照資料 ${index + 1}`;
+    const descPlaceholder = type === 'primary' ? '例：覚書（2023年7月締結）' : '例：日本・公正取引委員会 芸能人専属契約に関する指針';
+
+    const group = document.createElement('div');
+    group.className = 'input-group';
+    group.dataset.index = index;
+    group.innerHTML = `
+      <div class="input-group-header">
+        <span class="group-label">${label}</span>
+        <button type="button" class="remove-btn" onclick="this.closest('.input-group').remove()">削除</button>
+      </div>
+      <label>説明（この資料は何か）</label>
+      <input type="text" name="${type}_desc_${index}" placeholder="${descPlaceholder}">
+      <label>ファイルアップロード</label>
+      <div class="file-area" onclick="this.querySelector('input[type=file]').click()">
+        <div>📎 クリックまたはドラッグ＆ドロップ</div>
+        <div style="font-size:0.75rem;color:#888;margin-top:2px">PDF・Word・Excel・テキスト等 各種形式対応（PDFはOCR自動適用）</div>
+        <input type="file" name="${type}_file_${index}" accept=".pdf,.docx,.xlsx,.txt,.csv,.pages">
+        <div class="file-name">ファイル未選択</div>
+      </div>
+      <div class="or-divider">― または ―</div>
+      <label>テキスト入力（コピペ可）</label>
+      <textarea name="${type}_text_${index}" rows="4" placeholder="テキストを直接貼り付けることもできます"></textarea>
+      <div class="or-divider">― または ―</div>
+      <label>URL入力（Webページの内容を取得）</label>
+      <input type="text" name="${type}_url_${index}" placeholder="例：https://example.com/document">
+    `;
+    container.appendChild(group);
+  }
+
+  // ファイル選択時にファイル名表示
+  document.addEventListener('change', e => {
+    if (e.target.type === 'file') {
+      const nameEl = e.target.closest('.file-area').querySelector('.file-name');
+      nameEl.textContent = e.target.files[0]?.name || 'ファイル未選択';
+    }
   });
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      pdfInput.files = dt.files;
-      fileName.textContent = file.name;
+
+  // ドラッグ＆ドロップ
+  document.addEventListener('dragover', e => {
+    const area = e.target.closest('.file-area');
+    if (area) { e.preventDefault(); area.classList.add('dragover'); }
+  });
+  document.addEventListener('dragleave', e => {
+    const area = e.target.closest('.file-area');
+    if (area) area.classList.remove('dragover');
+  });
+  document.addEventListener('drop', e => {
+    const area = e.target.closest('.file-area');
+    if (area) {
+      e.preventDefault();
+      area.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        const input = area.querySelector('input[type=file]');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        area.querySelector('.file-name').textContent = file.name;
+      }
     }
   });
 
@@ -102,8 +228,7 @@
 
     btn.disabled = true;
     dlArea.style.display = 'none';
-    const isPdf = document.getElementById('pdf-input').files[0]?.name.toLowerCase().endsWith('.pdf');
-      status.innerHTML = `<span class="spinner"></span>${isPdf ? 'OCR処理中... しばらくお待ちください（30〜60秒）' : 'ファイル読み込み・AI解析中... しばらくお待ちください'}`;
+    status.innerHTML = '<span class="spinner"></span>AI解析中... しばらくお待ちください（30〜90秒）';
 
     try {
       const formData = new FormData(e.target);

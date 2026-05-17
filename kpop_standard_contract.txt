@@ -1,0 +1,32 @@
+cocona@MacBook-Pro dev 
+cocona@MacBook-Pro dev % c
+d /Users/coco
+na/dev/legal-
+check
+source venv/bin/activate
+export $(cat .env | xargs)
+export AWS_REGION=us-east-1
+export TEXTRACT_S3_BUCKET=takahiro-legal-check-2026
+uvicorn main:app --reload --port 8001
+cocona@MacBook-Pro legal-check % source
+ venv/bin/act
+ivate
+(venv) cocona@MacBook-Pro legal-check % export $(cat
+ .env | xargs
+)
+(venv) cocona@MacBook-Pro legal-check % export AWS_R
+EGION=us-east
+-1
+(venv) cocona@MacBook-Pro legal-check % export TEXTR
+ACT_S3_BUCKET
+=takahiro-leg
+al-check-2026
+
+(venv) cocona@MacBook-Pro legal-check % uvicorn main
+:app --reload
+ --port 8001
+INFO:     Will watch for changes in these directories: ['/Users/cocona/dev/legal-check']
+ERROR:    [Errno 48] Address already in use
+(venv) cocona@MacBook-Pro legal-check % 
+
+
