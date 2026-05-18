@@ -259,8 +259,13 @@ def legal_check_with_claude_v2(primary_docs: list[dict], secondary_docs: list[di
         model=ANTHROPIC_MODEL,
         max_tokens=64000,
         messages=[{"role": "user", "content": prompt}],
+        stream=True,
     )
-    result_text = response.content[0].text
+    # ストリーミングでテキストを収集
+    result_text = ""
+    for event in response:
+        if hasattr(event, 'type') and event.type == 'content_block_delta':
+            result_text += event.delta.text
 
     # JSONを抽出
     import re
