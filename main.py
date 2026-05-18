@@ -251,13 +251,13 @@ def legal_check_with_claude_v2(primary_docs: list[dict], secondary_docs: list[di
 4. 利用者の注目点に関連する事項
 5. 参照資料（標準契約書等）と比較して不足・乖離している点
 
-重要：各指摘は簡潔に（issue・recommendationは各100文字以内）。指摘は最大15件まで（利用者が出力条件で別途指定した場合はそちらに従う）。重要度の高いものから優先してください。
+重要：各指摘は簡潔に（issue・recommendationは各200文字以内）。重要度の高いものから優先してください。利用者が出力条件で件数を指定した場合はそちらに従ってください。指定がない場合は全件出力してください。
 
 {output_instruction}"""
 
     response = claude_client.messages.create(
         model=ANTHROPIC_MODEL,
-        max_tokens=16384,
+        max_tokens=64000,
         messages=[{"role": "user", "content": prompt}],
     )
     result_text = response.content[0].text
